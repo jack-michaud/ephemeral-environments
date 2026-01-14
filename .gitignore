@@ -1,4 +1,49 @@
+# Claude Code
 .claude/settings.local.json
 logs/
 
+# Credentials (NEVER commit these!)
 .env
+.env.test
+.env.local
+*.pem
+github-app.pem
+
+# Build artifacts
+dist/
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+.wrangler/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Packer
+packer_cache/
+*.pkrvars.hcl
+!*.pkrvars.hcl.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
