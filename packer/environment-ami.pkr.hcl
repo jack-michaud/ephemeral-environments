@@ -77,10 +77,18 @@ build {
     ]
   }
 
-  # Install Docker Compose v2 (as Docker plugin)
+  # Install Docker Buildx (required for docker compose build)
   provisioner "shell" {
     inline = [
       "sudo mkdir -p /usr/local/lib/docker/cli-plugins",
+      "sudo curl -SL https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-amd64 -o /usr/local/lib/docker/cli-plugins/docker-buildx",
+      "sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx"
+    ]
+  }
+
+  # Install Docker Compose v2 (as Docker plugin)
+  provisioner "shell" {
+    inline = [
       "sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose",
       "sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose",
       "# Also install standalone for compatibility",
@@ -88,13 +96,9 @@ build {
     ]
   }
 
-  # Install cloudflared
+  # Install cloudflared (direct binary download for Amazon Linux)
   provisioner "shell" {
     inline = [
-      "# Add Cloudflare GPG key and repo",
-      "curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg > /dev/null",
-      "echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/yum.repos.d/cloudflared.repo",
-      "# Install cloudflared via direct download (more reliable)",
       "sudo curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared",
       "sudo chmod +x /usr/local/bin/cloudflared",
       "cloudflared --version"
@@ -121,7 +125,8 @@ build {
       "[Service]",
       "Type=simple",
       "User=root",
-      "ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run",
+      "EnvironmentFile=/etc/cloudflared/tunnel.env",
+      "ExecStart=/usr/local/bin/cloudflared tunnel run --token $${TUNNEL_TOKEN}",
       "Restart=on-failure",
       "RestartSec=5",
       "",
@@ -141,17 +146,25 @@ build {
       "#!/bin/bash",
       "set -e",
       "",
-      "# Arguments: REPO_URL BRANCH TUNNEL_TOKEN",
+      "# Arguments: REPO_URL BRANCH TUNNEL_TOKEN [GITHUB_TOKEN]",
       "REPO_URL=$1",
       "BRANCH=$2",
       "TUNNEL_TOKEN=$3",
+      "GITHUB_TOKEN=$4",
       "",
       "echo \"Starting environment for $REPO_URL (branch: $BRANCH)\"",
       "",
-      "# Clone repository",
+      "# Clone repository (use token for private repos if provided)",
       "cd /app",
       "rm -rf repo",
-      "git clone --depth 1 --branch \"$BRANCH\" \"$REPO_URL\" repo",
+      "",
+      "if [ -n \"$GITHUB_TOKEN\" ]; then",
+      "  # Convert https://github.com/owner/repo.git to authenticated URL",
+      "  AUTH_URL=$(echo \"$REPO_URL\" | sed \"s|https://github.com|https://x-access-token:$${GITHUB_TOKEN}@github.com|\")",
+      "  git clone --depth 1 --branch \"$BRANCH\" \"$AUTH_URL\" repo",
+      "else",
+      "  git clone --depth 1 --branch \"$BRANCH\" \"$REPO_URL\" repo",
+      "fi",
       "cd repo",
       "",
       "# Start Docker",
@@ -160,15 +173,9 @@ build {
       "# Run docker-compose",
       "docker compose up -d --build",
       "",
-      "# Configure and start cloudflared",
-      "sudo tee /etc/cloudflared/config.yml > /dev/null <<EOF",
-      "tunnel: auto",
-      "credentials-file: /etc/cloudflared/creds.json",
-      "ingress:",
-      "  - service: http://localhost:80",
-      "EOF",
-      "",
-      "echo \"$TUNNEL_TOKEN\" | sudo tee /etc/cloudflared/creds.json > /dev/null",
+      "# Configure and start cloudflared with tunnel token",
+      "echo \"TUNNEL_TOKEN=$TUNNEL_TOKEN\" | sudo tee /etc/cloudflared/tunnel.env > /dev/null",
+      "sudo chmod 600 /etc/cloudflared/tunnel.env",
       "sudo systemctl start cloudflared",
       "",
       "echo \"Environment started successfully\"",

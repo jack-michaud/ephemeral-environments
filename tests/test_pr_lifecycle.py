@@ -19,8 +19,8 @@ import requests
 from github import Github
 
 
-# Test timeout (5 minutes)
-DEPLOY_TIMEOUT = 300
+# Test timeout (7 minutes - EC2 SSM readiness takes ~5.5 min)
+DEPLOY_TIMEOUT = 420
 REBUILD_TIMEOUT = 180
 CLEANUP_TIMEOUT = 60
 
@@ -70,7 +70,9 @@ class TestPRLifecycle:
         print("\n3. Accessing environment...")
         response = self._access_environment()
         assert response.status_code == 200, f"Failed to access environment: {response.status_code}"
+        assert "Welcome to nginx" in response.text, f"Expected nginx welcome page, got: {response.text[:200]}"
         print(f"   Response status: {response.status_code}")
+        print(f"   Content: nginx welcome page confirmed")
 
         # Step 4: Push commit and wait for rebuild
         print("\n4. Pushing commit and waiting for rebuild...")
@@ -146,8 +148,8 @@ class TestPRLifecycle:
             for comment in comments:
                 # Look for our bot's comment
                 if "Ephemeral Environment Deployed" in comment.body:
-                    # Extract URL
-                    match = re.search(r'https://[a-z0-9-]+\.cfargotunnel\.com', comment.body)
+                    # Extract URL (trycloudflare.com Quick Tunnel format)
+                    match = re.search(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', comment.body)
                     if match:
                         return match.group(0)
 
@@ -164,14 +166,23 @@ class TestPRLifecycle:
 
         return None
 
-    def _access_environment(self) -> requests.Response:
-        """Access the environment using Cloudflare Service Token."""
+    def _access_environment(self, max_retries: int = 6) -> requests.Response:
+        """Access the environment using Cloudflare Service Token with retries."""
         headers = {
             "CF-Access-Client-Id": self.config['cf_service_token_id'],
             "CF-Access-Client-Secret": self.config['cf_service_token_secret'],
         }
 
-        return requests.get(self.env_url, headers=headers, timeout=30)
+        # Retry loop to handle tunnel connection delay
+        for attempt in range(max_retries):
+            response = requests.get(self.env_url, headers=headers, timeout=30)
+            if response.status_code == 200:
+                return response
+            if attempt < max_retries - 1:
+                print(f"   Retry {attempt + 1}/{max_retries} (status: {response.status_code})")
+                time.sleep(10)
+
+        return response
 
     def _push_commit(self):
         """Push a new commit to trigger rebuild."""

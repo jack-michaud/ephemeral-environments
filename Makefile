@@ -4,8 +4,8 @@
 .PHONY: help setup setup-aws setup-cloudflare setup-github setup-test-token \
         tf-init tf-plan tf-apply tf-destroy \
         ami-build \
-        worker-dev worker-deploy \
-        lambda-package lambda-deploy \
+        worker-dev worker-deploy worker-secrets \
+        lambda-package lambda-update lambda-deploy \
         deploy destroy \
         test-e2e \
         clean
@@ -33,9 +33,11 @@ help:
 	@echo "Cloudflare Worker:"
 	@echo "  make worker-dev         Run worker locally for testing"
 	@echo "  make worker-deploy      Deploy worker to Cloudflare"
+	@echo "  make worker-secrets     Set all worker secrets from .env"
 	@echo ""
 	@echo "Lambda:"
 	@echo "  make lambda-package     Package Lambda functions"
+	@echo "  make lambda-update      Rebuild and deploy Lambda functions"
 	@echo "  make lambda-deploy      Deploy Lambda functions"
 	@echo ""
 	@echo "All-in-one:"
@@ -126,7 +128,8 @@ generate-tfvars: check-env
 		echo "github_webhook_secret = \"$$GITHUB_WEBHOOK_SECRET\"" >> infra/aws/terraform.tfvars && \
 		echo 'github_app_private_key = <<-EOT' >> infra/aws/terraform.tfvars && \
 		cat "$$GITHUB_APP_PRIVATE_KEY_PATH" >> infra/aws/terraform.tfvars && \
-		echo "EOT" >> infra/aws/terraform.tfvars
+		echo "EOT" >> infra/aws/terraform.tfvars && \
+		if [ -n "$$ENVIRONMENT_AMI_ID" ]; then echo "environment_ami_id = \"$$ENVIRONMENT_AMI_ID\"" >> infra/aws/terraform.tfvars; fi
 	@. ./.env && \
 		echo "cloudflare_account_id = \"$$CLOUDFLARE_ACCOUNT_ID\"" > infra/cloudflare/terraform.tfvars && \
 		echo "cloudflare_api_token = \"$$CLOUDFLARE_API_TOKEN\"" >> infra/cloudflare/terraform.tfvars
@@ -151,24 +154,52 @@ ami-build: check-env
 # Cloudflare Worker
 # =============================================================================
 
-worker-dev:
+worker-dev: check-env
 	@echo "Starting worker in development mode..."
-	cd worker && npm install && npx wrangler dev
+	@. ./.env && cd worker && npm install && CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler dev
 
 worker-deploy: check-env
 	@echo "Deploying worker to Cloudflare..."
-	cd worker && npm install && npx wrangler deploy
+	@. ./.env && cd worker && npm install && CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler deploy
+
+worker-secrets: check-env
+	@echo "Setting Cloudflare Worker secrets..."
+	@. ./.env && cd worker && \
+		echo "Setting GITHUB_WEBHOOK_SECRET..." && \
+		printf '%s' "$$GITHUB_WEBHOOK_SECRET" | tr -d '\n\r' | CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler secret put GITHUB_WEBHOOK_SECRET && \
+		echo "Setting AWS_ACCESS_KEY_ID..." && \
+		printf '%s' "$$AWS_ACCESS_KEY_ID" | tr -d '\n\r' | CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler secret put AWS_ACCESS_KEY_ID && \
+		echo "Setting AWS_SECRET_ACCESS_KEY..." && \
+		printf '%s' "$$AWS_SECRET_ACCESS_KEY" | tr -d '\n\r' | CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler secret put AWS_SECRET_ACCESS_KEY && \
+		echo "Setting AWS_REGION..." && \
+		printf '%s' "$$AWS_REGION" | tr -d '\n\r' | CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler secret put AWS_REGION && \
+		echo "Setting SQS_QUEUE_URL..." && \
+		printf '%s' "https://sqs.$$AWS_REGION.amazonaws.com/$$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo '836556727475')/ephemeral-build-queue" | tr -d '\n\r' | CLOUDFLARE_API_TOKEN=$$CLOUDFLARE_API_TOKEN npx wrangler secret put SQS_QUEUE_URL
+	@echo "All worker secrets set successfully!"
 
 # =============================================================================
 # Lambda
 # =============================================================================
 
 lambda-package:
-	@echo "Packaging Lambda functions..."
+	@echo "Packaging Lambda functions using Lambda-compatible Docker image..."
 	@mkdir -p dist
-	cd src/deployer && pip install -r requirements.txt -t . && zip -r ../../dist/deployer.zip .
-	cd src/cleanup && pip install -r requirements.txt -t . && zip -r ../../dist/cleanup.zip .
+	docker run --rm --platform linux/amd64 --entrypoint "" -v "$(PWD)/src/deployer:/src:ro" -v "$(PWD)/dist:/dist" public.ecr.aws/lambda/python:3.11 sh -c "\
+		yum install -y zip && \
+		mkdir /build && cp -r /src/* /build/ && \
+		pip install --upgrade -r /build/requirements.txt -t /build && \
+		cd /build && zip -r /dist/deployer.zip . -x '*.pyc' -x '__pycache__/*'"
+	docker run --rm --platform linux/amd64 --entrypoint "" -v "$(PWD)/src/cleanup:/src:ro" -v "$(PWD)/dist:/dist" public.ecr.aws/lambda/python:3.11 sh -c "\
+		yum install -y zip && \
+		mkdir /build && cp -r /src/* /build/ && \
+		pip install --upgrade -r /build/requirements.txt -t /build && \
+		cd /build && zip -r /dist/cleanup.zip . -x '*.pyc' -x '__pycache__/*'"
 	@echo "Lambda packages created in dist/"
+
+lambda-update: lambda-package generate-tfvars
+	@echo "Deploying Lambda functions via Terraform..."
+	cd infra/aws && terraform apply -auto-approve -target=aws_lambda_function.deploy_worker -target=aws_lambda_function.cleanup_worker
+	@echo "Lambda functions updated!"
 
 lambda-deploy: lambda-package check-env
 	@echo "Deploying Lambda functions..."

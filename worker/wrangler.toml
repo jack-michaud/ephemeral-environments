@@ -4,8 +4,8 @@ name = "ephemeral-environments-webhook"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
-# Account ID (set via environment or wrangler login)
-# account_id = ""
+# Account ID
+account_id = "8c58dab912471be270012e431bfeccec"
 
 # Environment variables (secrets should be set via wrangler secret)
 [vars]
@@ -22,3 +22,7 @@ compatibility_date = "2024-01-01"
 [dev]
 port = 8787
 local_protocol = "http"
+
+# Enable logging
+[observability]
+enabled = true

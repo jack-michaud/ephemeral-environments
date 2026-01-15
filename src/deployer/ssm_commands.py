@@ -89,18 +89,61 @@ class SSMCommands:
         instance_id: str,
         repo_url: str,
         branch: str,
-        tunnel_token: str
+        tunnel_token: str = None,
+        github_token: str = None
     ):
         """
         Run the start-environment script on an instance.
 
-        This clones the repo, runs docker-compose, and starts cloudflared.
+        This clones the repo, runs docker-compose, and starts cloudflared Quick Tunnel.
+        Returns the trycloudflare.com URL in the command output.
         """
-        commands = [
-            f'/usr/local/bin/start-environment.sh "{repo_url}" "{branch}" "{tunnel_token}"'
-        ]
+        # Build commands for Quick Tunnel mode
+        # Note: SSM runs each command separately, so we need a single script
+        github_token_str = github_token if github_token else ''
 
-        return self.run_command(instance_id, commands, timeout=900)
+        script = f'''#!/bin/bash
+export REPO_URL="{repo_url}"
+export BRANCH="{branch}"
+export GITHUB_TOKEN="{github_token_str}"
+
+echo "Starting environment for $REPO_URL (branch: $BRANCH)"
+
+cd /app
+rm -rf repo
+
+if [ -n "$GITHUB_TOKEN" ]; then
+    AUTH_URL=$(echo "$REPO_URL" | sed "s|https://github.com|https://x-access-token:$GITHUB_TOKEN@github.com|")
+    git clone --depth 1 --branch "$BRANCH" "$AUTH_URL" repo || exit 1
+else
+    git clone --depth 1 --branch "$BRANCH" "$REPO_URL" repo || exit 1
+fi
+cd repo
+
+sudo systemctl start docker
+sleep 5
+docker compose up -d --build || exit 1
+sleep 5
+
+sudo /usr/local/bin/cloudflared tunnel --url http://localhost:80 > /tmp/cloudflared.log 2>&1 &
+echo "Started cloudflared"
+
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+    TUNNEL_URL=$(cat /tmp/cloudflared.log 2>/dev/null | grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' | head -1)
+    if [ -n "$TUNNEL_URL" ]; then
+        echo "TUNNEL_URL=$TUNNEL_URL"
+        echo "Environment started successfully"
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "ERROR: Tunnel URL not found"
+cat /tmp/cloudflared.log
+exit 1
+'''
+
+        return self.run_command(instance_id, [script], timeout=300)
 
     def run_rebuild_environment(self, instance_id: str, branch: str):
         """

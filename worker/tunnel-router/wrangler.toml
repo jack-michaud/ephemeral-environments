@@ -1,0 +1,15 @@
+# Tunnel Router Worker - Routes *.lomz.workers.dev to Cloudflare Tunnels
+
+name = "tunnel-router"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Account ID
+account_id = "8c58dab912471be270012e431bfeccec"
+
+# Enable workers.dev subdomain with wildcard pattern
+workers_dev = true
+
+[dev]
+port = 8788
+local_protocol = "http"

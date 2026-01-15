@@ -18,6 +18,12 @@ variable "environment_instance_type" {
   default     = "t3.small"
 }
 
+variable "environment_ami_id" {
+  description = "AMI ID for environment instances (built by Packer)"
+  type        = string
+  default     = ""  # If empty, uses latest Amazon Linux 2023
+}
+
 variable "max_environments" {
   description = "Maximum number of concurrent environments"
   type        = number

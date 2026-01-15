@@ -97,7 +97,7 @@ data "aws_ami" "amazon_linux_2023" {
 # Launch template for environment instances
 resource "aws_launch_template" "environment" {
   name_prefix   = "${local.name_prefix}-"
-  image_id      = data.aws_ami.amazon_linux_2023.id  # Will be replaced by Packer AMI
+  image_id      = var.environment_ami_id != "" ? var.environment_ami_id : data.aws_ami.amazon_linux_2023.id
   instance_type = var.environment_instance_type
 
   iam_instance_profile {

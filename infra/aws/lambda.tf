@@ -182,9 +182,9 @@ resource "aws_lambda_function" "deploy_worker" {
   timeout       = 900  # 15 minutes (EC2 launch + docker-compose can take a while)
   memory_size   = 256
 
-  # Placeholder - will be updated by make lambda-deploy
-  filename         = data.archive_file.lambda_placeholder.output_path
-  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
+  # Use actual code if available, otherwise placeholder
+  filename         = fileexists("${path.module}/../../dist/deployer.zip") ? "${path.module}/../../dist/deployer.zip" : data.archive_file.lambda_placeholder.output_path
+  source_code_hash = fileexists("${path.module}/../../dist/deployer.zip") ? filebase64sha256("${path.module}/../../dist/deployer.zip") : data.archive_file.lambda_placeholder.output_base64sha256
 
   environment {
     variables = {
@@ -219,9 +219,9 @@ resource "aws_lambda_function" "cleanup_worker" {
   timeout       = 300  # 5 minutes
   memory_size   = 128
 
-  # Placeholder - will be updated by make lambda-deploy
-  filename         = data.archive_file.lambda_placeholder.output_path
-  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
+  # Use actual code if available, otherwise placeholder
+  filename         = fileexists("${path.module}/../../dist/cleanup.zip") ? "${path.module}/../../dist/cleanup.zip" : data.archive_file.lambda_placeholder.output_path
+  source_code_hash = fileexists("${path.module}/../../dist/cleanup.zip") ? filebase64sha256("${path.module}/../../dist/cleanup.zip") : data.archive_file.lambda_placeholder.output_base64sha256
 
   environment {
     variables = {

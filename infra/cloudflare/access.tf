@@ -38,12 +38,10 @@ resource "cloudflare_access_group" "github_users" {
 }
 
 # Service Token for E2E testing (bypasses OAuth)
-resource "cloudflare_access_service_token" "test" {
-  account_id = var.cloudflare_account_id
-  name       = "ephemeral-environments-test"
-
-  # Note: duration cannot be set via Terraform, defaults to 1 year
-}
+# Note: Create manually via Cloudflare dashboard or API
+# The token should be stored in .env.test as:
+#   CF_SERVICE_TOKEN_ID=<client_id>
+#   CF_SERVICE_TOKEN_SECRET=<client_secret>
 
 # Outputs
 output "github_idp_id" {
@@ -56,17 +54,8 @@ output "github_users_group_id" {
   description = "Access Group ID for GitHub users"
 }
 
-output "test_service_token_id" {
-  value       = cloudflare_access_service_token.test.client_id
-  description = "Service Token Client ID for E2E tests"
-  sensitive   = true
-}
-
-output "test_service_token_secret" {
-  value       = cloudflare_access_service_token.test.client_secret
-  description = "Service Token Client Secret for E2E tests"
-  sensitive   = true
-}
+# Service token outputs removed - token is created manually
+# and stored in .env.test
 
 output "summary" {
   value = <<-EOF
@@ -79,9 +68,7 @@ output "summary" {
 
     Access Group: ${cloudflare_access_group.github_users.name}
 
-    Service Token for Testing:
-      Client ID: ${cloudflare_access_service_token.test.client_id}
-      (Run: terraform output -raw test_service_token_secret)
+    Service Token for Testing: Create manually and add to .env.test
 
     Note: Per-environment Access applications are created dynamically
     by the deploy Lambda when environments are spun up.

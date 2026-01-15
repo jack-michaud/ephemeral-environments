@@ -43,8 +43,8 @@ def get_secret(secret_arn: str) -> dict:
     return json.loads(response['SecretString'])
 
 
-def get_github_client(repo_full_name: str) -> Github:
-    """Get authenticated GitHub client using GitHub App."""
+def get_github_token(repo_full_name: str) -> str:
+    """Get GitHub App installation access token for a repository."""
     secrets = get_secret(GITHUB_SECRET_ARN)
     app_id = secrets['app_id']
     private_key = secrets['private_key']
@@ -56,7 +56,12 @@ def get_github_client(repo_full_name: str) -> Github:
     installation = integration.get_installation(owner, repo_full_name.split('/')[1])
     access_token = integration.get_access_token(installation.id).token
 
-    return Github(access_token)
+    return access_token
+
+
+def get_github_client(repo_full_name: str) -> Github:
+    """Get authenticated GitHub client using GitHub App."""
+    return Github(get_github_token(repo_full_name))
 
 
 def lambda_handler(event, context):
@@ -102,12 +107,18 @@ def handle_deploy(message: dict):
     # Get managers
     cf_secrets = get_secret(CLOUDFLARE_SECRET_ARN)
     ec2_manager = EC2Manager(LAUNCH_TEMPLATE_ID, SUBNET_IDS, SECURITY_GROUP_ID)
-    cf_manager = CloudflareManager(cf_secrets['api_token'], cf_secrets['account_id'])
+    cf_manager = CloudflareManager(
+        cf_secrets['api_token'],
+        cf_secrets['account_id'],
+        zone_id=cf_secrets.get('zone_id'),
+        domain=cf_secrets.get('domain')
+    )
     ssm = SSMCommands()
 
     try:
-        # Update GitHub status to pending
-        gh = get_github_client(repo)
+        # Get GitHub token for repo cloning and API access
+        github_token = get_github_token(repo)
+        gh = Github(github_token)
         gh_repo = gh.get_repo(repo)
         commit = gh_repo.get_commit(sha)
         commit.create_status(
@@ -138,27 +149,30 @@ def handle_deploy(message: dict):
         ec2_manager.wait_for_instance(instance_id)
         logger.info(f"Instance {instance_id} is ready")
 
-        # Create Cloudflare tunnel
-        tunnel_name = f"ephemeral-{repo.replace('/', '-')}-{pr_number}"
-        tunnel_id, tunnel_token = cf_manager.create_tunnel(tunnel_name)
-        tunnel_url = f"https://{tunnel_id}.cfargotunnel.com"
-        logger.info(f"Created tunnel: {tunnel_url}")
-
-        # Run start script via SSM
-        ssm.run_start_environment(
+        # Run start script via SSM - this starts docker-compose and Quick Tunnel
+        # The Quick Tunnel URL is captured from cloudflared output
+        result = ssm.run_start_environment(
             instance_id=instance_id,
             repo_url=clone_url,
             branch=branch,
-            tunnel_token=tunnel_token
+            github_token=github_token
         )
         logger.info(f"Started environment on {instance_id}")
 
-        # Create Access application for the tunnel
-        cf_manager.create_access_application(
-            tunnel_id=tunnel_id,
-            name=tunnel_name,
-            allowed_emails=[message['pullRequest']['author'] + '@users.noreply.github.com']
-        )
+        # Extract tunnel URL from SSM output
+        import re
+        tunnel_url = None
+        tunnel_id = None
+        stdout = result.get('stdout', '')
+        url_match = re.search(r'TUNNEL_URL=(https://[a-zA-Z0-9-]+\.trycloudflare\.com)', stdout)
+        if url_match:
+            tunnel_url = url_match.group(1)
+            # Extract ID from URL for reference
+            tunnel_id = tunnel_url.replace('https://', '').replace('.trycloudflare.com', '')
+            logger.info(f"Quick Tunnel URL: {tunnel_url}")
+        else:
+            logger.error(f"Could not extract tunnel URL from output: {stdout}")
+            raise Exception("Quick Tunnel URL not found in SSM output")
 
         # Save to DynamoDB
         now = datetime.now(timezone.utc).isoformat()
@@ -247,22 +261,14 @@ def handle_destroy(message: dict):
         logger.info(f"No environment found for {pk}")
         return
 
-    # Get managers
-    cf_secrets = get_secret(CLOUDFLARE_SECRET_ARN)
+    # Get EC2 manager
     ec2_manager = EC2Manager(LAUNCH_TEMPLATE_ID, SUBNET_IDS, SECURITY_GROUP_ID)
-    cf_manager = CloudflareManager(cf_secrets['api_token'], cf_secrets['account_id'])
 
     try:
-        # Terminate EC2 instance
+        # Terminate EC2 instance (this also kills the Quick Tunnel)
         if existing.get('ec2_instance_id'):
             logger.info(f"Terminating instance: {existing['ec2_instance_id']}")
             ec2_manager.terminate_instance(existing['ec2_instance_id'])
-
-        # Delete Cloudflare tunnel
-        if existing.get('tunnel_id'):
-            logger.info(f"Deleting tunnel: {existing['tunnel_id']}")
-            cf_manager.delete_tunnel(existing['tunnel_id'])
-            cf_manager.delete_access_application(existing['tunnel_id'])
 
         # Update DynamoDB
         environments_table.update_item(

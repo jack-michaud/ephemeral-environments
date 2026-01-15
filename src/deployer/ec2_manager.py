@@ -23,10 +23,15 @@ class EC2Manager:
             all_tags.extend([{'Key': k, 'Value': v} for k, v in tags.items()])
 
         response = self.ec2.run_instances(
-            LaunchTemplate={'LaunchTemplateId': self.launch_template_id},
+            LaunchTemplate={'LaunchTemplateId': self.launch_template_id, 'Version': '$Latest'},
             MinCount=1,
             MaxCount=1,
-            SubnetId=self.subnet_ids[0],  # Use first subnet
+            NetworkInterfaces=[{
+                'DeviceIndex': 0,
+                'SubnetId': self.subnet_ids[0],
+                'AssociatePublicIpAddress': True,
+                'Groups': [self.security_group_id]
+            }],
             TagSpecifications=[
                 {
                     'ResourceType': 'instance',
