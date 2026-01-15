@@ -1,0 +1,5 @@
+# Deploy Worker Lambda Dependencies
+boto3>=1.34.0
+requests>=2.31.0
+PyGithub>=2.1.0
+cloudflare>=2.0.0

@@ -1,0 +1,24 @@
+# Ephemeral Environments - Cloudflare Worker Configuration
+
+name = "ephemeral-environments-webhook"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Account ID (set via environment or wrangler login)
+# account_id = ""
+
+# Environment variables (secrets should be set via wrangler secret)
+[vars]
+# AWS_REGION = "us-east-1"  # Set via wrangler secret
+# SQS_QUEUE_URL = ""        # Set after terraform apply
+
+# Secrets (set these via: wrangler secret put <NAME>)
+# - GITHUB_WEBHOOK_SECRET
+# - AWS_ACCESS_KEY_ID
+# - AWS_SECRET_ACCESS_KEY
+# - SQS_QUEUE_URL
+
+# Development settings
+[dev]
+port = 8787
+local_protocol = "http"

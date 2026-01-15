@@ -1,0 +1,13 @@
+# Ephemeral Environments - Cloudflare Terraform Variables
+# Copy this file to terraform.tfvars and fill in the values
+
+# Required: Cloudflare credentials (from .env)
+cloudflare_api_token  = ""  # Your Cloudflare API Token
+cloudflare_account_id = ""  # Your Cloudflare Account ID
+
+# Optional: GitHub OAuth App for seamless SSO
+# If not set, users will authenticate via email one-time PIN
+# To create: https://github.com/settings/developers -> OAuth Apps -> New
+# Set callback URL to: https://<your-team>.cloudflareaccess.com/cdn-cgi/access/callback
+github_client_id     = ""
+github_client_secret = ""

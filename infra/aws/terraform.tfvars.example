@@ -1,0 +1,32 @@
+# Ephemeral Environments - AWS Terraform Variables
+# Copy this file to terraform.tfvars and fill in the values
+
+# AWS region
+aws_region = "us-east-1"
+
+# VPC CIDR block
+vpc_cidr = "10.0.0.0/16"
+
+# EC2 instance type for environments
+environment_instance_type = "t3.small"
+
+# Maximum concurrent environments
+max_environments = 20
+
+# Hours of inactivity before auto-stop
+auto_stop_hours = 4
+
+# Cloudflare credentials (from .env)
+cloudflare_account_id = ""  # Your Cloudflare Account ID
+cloudflare_api_token  = ""  # Your Cloudflare API Token
+
+# GitHub App credentials (from .env)
+github_app_id          = ""  # Your GitHub App ID
+github_webhook_secret  = ""  # Your webhook secret
+
+# GitHub App private key (paste the entire PEM content)
+github_app_private_key = <<-EOF
+-----BEGIN RSA PRIVATE KEY-----
+...your private key here...
+-----END RSA PRIVATE KEY-----
+EOF

@@ -103,19 +103,34 @@ tf-init:
 	cd infra/aws && terraform init
 	cd infra/cloudflare && terraform init
 
-tf-plan: check-env
+tf-plan: check-env generate-tfvars
 	@echo "Planning AWS infrastructure..."
 	cd infra/aws && terraform plan
 	@echo ""
 	@echo "Planning Cloudflare infrastructure..."
 	cd infra/cloudflare && terraform plan
 
-tf-apply: check-env
+tf-apply: check-env generate-tfvars
 	@echo "Applying AWS infrastructure..."
-	cd infra/aws && terraform apply
+	cd infra/aws && terraform apply -auto-approve
 	@echo ""
 	@echo "Applying Cloudflare infrastructure..."
-	cd infra/cloudflare && terraform apply
+	cd infra/cloudflare && terraform apply -auto-approve
+
+generate-tfvars: check-env
+	@echo "Generating terraform.tfvars from .env..."
+	@. ./.env && \
+		echo "cloudflare_account_id = \"$$CLOUDFLARE_ACCOUNT_ID\"" > infra/aws/terraform.tfvars && \
+		echo "cloudflare_api_token = \"$$CLOUDFLARE_API_TOKEN\"" >> infra/aws/terraform.tfvars && \
+		echo "github_app_id = \"$$GITHUB_APP_ID\"" >> infra/aws/terraform.tfvars && \
+		echo "github_webhook_secret = \"$$GITHUB_WEBHOOK_SECRET\"" >> infra/aws/terraform.tfvars && \
+		echo 'github_app_private_key = <<-EOT' >> infra/aws/terraform.tfvars && \
+		cat "$$GITHUB_APP_PRIVATE_KEY_PATH" >> infra/aws/terraform.tfvars && \
+		echo "EOT" >> infra/aws/terraform.tfvars
+	@. ./.env && \
+		echo "cloudflare_account_id = \"$$CLOUDFLARE_ACCOUNT_ID\"" > infra/cloudflare/terraform.tfvars && \
+		echo "cloudflare_api_token = \"$$CLOUDFLARE_API_TOKEN\"" >> infra/cloudflare/terraform.tfvars
+	@echo "Generated infra/aws/terraform.tfvars and infra/cloudflare/terraform.tfvars"
 
 tf-destroy: check-env
 	@echo "Destroying Cloudflare infrastructure..."
