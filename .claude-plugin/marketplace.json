@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "ephemeral-environments",
-      "source": "./plugin",
+      "source": "./.claude-plugin/plugin",
       "description": "Integrate any project with the ephemeral environments system for automatic PR preview deployments",
       "version": "0.1.0",
       "author": {
