@@ -1,0 +1,9 @@
+{
+  "name": "ephemeral-environments",
+  "version": "0.1.0",
+  "description": "Integrate any project with the ephemeral environments system for automatic PR preview deployments",
+  "author": {
+    "name": "Jack Michaud"
+  },
+  "keywords": ["ephemeral", "preview", "pr", "deployment", "docker"]
+}
