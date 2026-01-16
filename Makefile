@@ -234,7 +234,7 @@ destroy: tf-destroy
 test-e2e: .env.test
 	@echo "Running E2E tests..."
 	@if [ ! -f .env.test ]; then echo "Error: .env.test not found. Run 'make setup-test-token' first."; exit 1; fi
-	cd tests && python -m pytest test_pr_lifecycle.py -v
+	python -m pytest tests/test_pr_lifecycle.py -v
 
 # =============================================================================
 # Utilities

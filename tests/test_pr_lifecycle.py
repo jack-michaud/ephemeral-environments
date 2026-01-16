@@ -70,9 +70,9 @@ class TestPRLifecycle:
         print("\n3. Accessing environment...")
         response = self._access_environment()
         assert response.status_code == 200, f"Failed to access environment: {response.status_code}"
-        assert "Welcome to nginx" in response.text, f"Expected nginx welcome page, got: {response.text[:200]}"
+        assert "Ephemeral Envs Test" in response.text, f"Expected test app page, got: {response.text[:200]}"
         print(f"   Response status: {response.status_code}")
-        print(f"   Content: nginx welcome page confirmed")
+        print(f"   Content: test app page confirmed")
 
         # Step 4: Push commit and wait for rebuild
         print("\n4. Pushing commit and waiting for rebuild...")

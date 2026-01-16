@@ -45,39 +45,24 @@ class EC2Manager:
         return instance_id
 
     def wait_for_instance(self, instance_id: str, timeout: int = 300):
-        """Wait for instance to be running and SSM ready."""
-        logger.info(f"Waiting for instance {instance_id} to be ready...")
+        """Wait for instance to be running.
 
-        # Wait for instance to be running
+        Optimization: Skip both instance_status_ok and SSM agent checks.
+        The SSM send_command will handle retries internally.
+        """
+        logger.info(f"Waiting for instance {instance_id} to be ready...")
+        overall_start = time.time()
+
+        # Wait for instance to be running (fast - typically 10-20s)
+        phase_start = time.time()
         waiter = self.ec2.get_waiter('instance_running')
         waiter.wait(
             InstanceIds=[instance_id],
-            WaiterConfig={'Delay': 5, 'MaxAttempts': timeout // 5}
+            WaiterConfig={'Delay': 3, 'MaxAttempts': timeout // 3}
         )
-
-        # Wait for status checks
-        waiter = self.ec2.get_waiter('instance_status_ok')
-        waiter.wait(
-            InstanceIds=[instance_id],
-            WaiterConfig={'Delay': 10, 'MaxAttempts': timeout // 10}
-        )
-
-        # Additional wait for SSM agent
-        ssm = boto3.client('ssm')
-        start_time = time.time()
-        while time.time() - start_time < 120:  # 2 minute timeout
-            try:
-                response = ssm.describe_instance_information(
-                    Filters=[{'Key': 'InstanceIds', 'Values': [instance_id]}]
-                )
-                if response.get('InstanceInformationList'):
-                    logger.info(f"Instance {instance_id} is SSM ready")
-                    return
-            except Exception:
-                pass
-            time.sleep(10)
-
-        logger.warning(f"Instance {instance_id} may not be fully SSM ready")
+        logger.info(f"[TIMING] instance_running: {time.time() - phase_start:.2f}s")
+        logger.info(f"[TIMING] total_wait_for_instance: {time.time() - overall_start:.2f}s")
+        logger.info(f"Instance {instance_id} is running, SSM commands will retry as needed")
 
     def stop_instance(self, instance_id: str):
         """Stop an EC2 instance."""

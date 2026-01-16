@@ -9,6 +9,7 @@ import os
 import time
 import logging
 from datetime import datetime, timezone
+from contextlib import contextmanager
 
 import boto3
 from github import Github, GithubIntegration
@@ -16,6 +17,19 @@ from github import Github, GithubIntegration
 from ec2_manager import EC2Manager
 from cloudflare_api import CloudflareManager
 from ssm_commands import SSMCommands
+
+
+@contextmanager
+def timed_step(name: str, timings: dict):
+    """Context manager to track timing of a step."""
+    start = time.time()
+    logger.info(f"[TIMING] Starting: {name}")
+    try:
+        yield
+    finally:
+        elapsed = time.time() - start
+        timings[name] = elapsed
+        logger.info(f"[TIMING] Completed: {name} in {elapsed:.2f}s")
 
 # Configure logging
 logger = logging.getLogger()
@@ -89,6 +103,9 @@ def lambda_handler(event, context):
 
 def handle_deploy(message: dict):
     """Handle deploy action - spin up environment."""
+    deploy_start = time.time()
+    timings = {}
+
     repo = message['repository']['fullName']
     pr_number = message['pullRequest']['number']
     branch = message['pullRequest']['branch']
@@ -105,7 +122,8 @@ def handle_deploy(message: dict):
     existing = environments_table.get_item(Key={'pk': pk}).get('Item')
 
     # Get managers
-    cf_secrets = get_secret(CLOUDFLARE_SECRET_ARN)
+    with timed_step("get_secrets", timings):
+        cf_secrets = get_secret(CLOUDFLARE_SECRET_ARN)
     ec2_manager = EC2Manager(LAUNCH_TEMPLATE_ID, SUBNET_IDS, SECURITY_GROUP_ID)
     cf_manager = CloudflareManager(
         cf_secrets['api_token'],
@@ -117,46 +135,51 @@ def handle_deploy(message: dict):
 
     try:
         # Get GitHub token for repo cloning and API access
-        github_token = get_github_token(repo)
-        gh = Github(github_token)
-        gh_repo = gh.get_repo(repo)
-        commit = gh_repo.get_commit(sha)
-        commit.create_status(
-            state='pending',
-            description='Deploying environment...',
-            context='Ephemeral Environment'
-        )
+        with timed_step("get_github_token", timings):
+            github_token = get_github_token(repo)
+            gh = Github(github_token)
+            gh_repo = gh.get_repo(repo)
+            commit = gh_repo.get_commit(sha)
+            commit.create_status(
+                state='pending',
+                description='Deploying environment...',
+                context='Ephemeral Environment'
+            )
 
         # If existing environment, stop old instance first
         if existing and existing.get('ec2_instance_id'):
-            logger.info(f"Stopping existing instance: {existing['ec2_instance_id']}")
-            ec2_manager.terminate_instance(existing['ec2_instance_id'])
-            if existing.get('tunnel_id'):
-                cf_manager.delete_tunnel(existing['tunnel_id'])
+            with timed_step("terminate_old_instance", timings):
+                logger.info(f"Stopping existing instance: {existing['ec2_instance_id']}")
+                ec2_manager.terminate_instance(existing['ec2_instance_id'])
+                if existing.get('tunnel_id'):
+                    cf_manager.delete_tunnel(existing['tunnel_id'])
 
         # Launch new EC2 instance
-        instance_id = ec2_manager.launch_instance(
-            name=f"ephemeral-{repo.replace('/', '-')}-{pr_number}",
-            tags={
-                'Repository': repo,
-                'PRNumber': str(pr_number),
-                'Branch': branch,
-            }
-        )
+        with timed_step("launch_instance", timings):
+            instance_id = ec2_manager.launch_instance(
+                name=f"ephemeral-{repo.replace('/', '-')}-{pr_number}",
+                tags={
+                    'Repository': repo,
+                    'PRNumber': str(pr_number),
+                    'Branch': branch,
+                }
+            )
         logger.info(f"Launched instance: {instance_id}")
 
         # Wait for instance to be ready
-        ec2_manager.wait_for_instance(instance_id)
+        with timed_step("wait_for_instance", timings):
+            ec2_manager.wait_for_instance(instance_id)
         logger.info(f"Instance {instance_id} is ready")
 
         # Run start script via SSM - this starts docker-compose and Quick Tunnel
         # The Quick Tunnel URL is captured from cloudflared output
-        result = ssm.run_start_environment(
-            instance_id=instance_id,
-            repo_url=clone_url,
-            branch=branch,
-            github_token=github_token
-        )
+        with timed_step("run_ssm_start_environment", timings):
+            result = ssm.run_start_environment(
+                instance_id=instance_id,
+                repo_url=clone_url,
+                branch=branch,
+                github_token=github_token
+            )
         logger.info(f"Started environment on {instance_id}")
 
         # Extract tunnel URL from SSM output
@@ -207,17 +230,33 @@ def handle_deploy(message: dict):
             context='Ephemeral Environment'
         )
 
-        # Post comment to PR
+        # Calculate total deploy time
+        total_time = time.time() - deploy_start
+        timings['total'] = total_time
+
+        # Log timing summary
+        logger.info(f"[TIMING] === Deploy Summary for {pk} ===")
+        for step, duration in sorted(timings.items(), key=lambda x: x[1], reverse=True):
+            logger.info(f"[TIMING]   {step}: {duration:.2f}s")
+
+        # Post comment to PR with timing info
         pr = gh_repo.get_pull(pr_number)
+        timing_breakdown = " | ".join([f"{k}: {v:.0f}s" for k, v in timings.items() if k != 'total'])
         comment_body = f"""🚀 **Ephemeral Environment Deployed**
 
 **URL:** {tunnel_url}
 
-_Commit: {sha[:8]}_
+_Commit: {sha[:8]} | Deploy time: {total_time:.0f}s_
+
+<details>
+<summary>Timing breakdown</summary>
+
+{timing_breakdown}
+</details>
 """
         pr.create_issue_comment(comment_body)
 
-        logger.info(f"Environment deployed: {tunnel_url}")
+        logger.info(f"Environment deployed: {tunnel_url} in {total_time:.0f}s")
 
     except Exception as e:
         logger.exception(f"Failed to deploy environment: {e}")

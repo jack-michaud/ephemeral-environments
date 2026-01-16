@@ -68,12 +68,20 @@ build {
     ]
   }
 
-  # Install Docker
+  # Install Docker and pre-pull common base images
   provisioner "shell" {
     inline = [
       "sudo dnf install -y docker",
       "sudo systemctl enable docker",
-      "sudo usermod -aG docker ec2-user"
+      "sudo systemctl start docker",
+      "sudo usermod -aG docker ec2-user",
+      "# Pre-pull common base images to speed up first docker compose",
+      "sudo docker pull python:3.11-slim",
+      "sudo docker pull python:3.12-slim",
+      "sudo docker pull node:20-slim",
+      "sudo docker pull node:22-slim",
+      "sudo docker pull nginx:alpine",
+      "sudo docker pull alpine:latest"
     ]
   }
 
