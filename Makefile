@@ -194,11 +194,16 @@ lambda-package:
 		mkdir /build && cp -r /src/* /build/ && \
 		pip install --upgrade -r /build/requirements.txt -t /build && \
 		cd /build && zip -r /dist/cleanup.zip . -x '*.pyc' -x '__pycache__/*'"
+	docker run --rm --platform linux/amd64 --entrypoint "" -v "$(PWD)/src/reconciler:/src:ro" -v "$(PWD)/dist:/dist" public.ecr.aws/lambda/python:3.11 sh -c "\
+		yum install -y zip && \
+		mkdir /build && cp -r /src/* /build/ && \
+		pip install --upgrade -r /build/requirements.txt -t /build && \
+		cd /build && zip -r /dist/reconciler.zip . -x '*.pyc' -x '__pycache__/*'"
 	@echo "Lambda packages created in dist/"
 
 lambda-update: lambda-package generate-tfvars
 	@echo "Deploying Lambda functions via Terraform..."
-	cd infra/aws && terraform apply -auto-approve -target=aws_lambda_function.deploy_worker -target=aws_lambda_function.cleanup_worker
+	cd infra/aws && terraform apply -auto-approve -target=aws_lambda_function.deploy_worker -target=aws_lambda_function.cleanup_worker -target=aws_lambda_function.reconciler_worker
 	@echo "Lambda functions updated!"
 
 lambda-deploy: lambda-package check-env
@@ -246,5 +251,6 @@ clean:
 	rm -rf dist/
 	rm -rf src/deployer/*.dist-info src/deployer/bin
 	rm -rf src/cleanup/*.dist-info src/cleanup/bin
+	rm -rf src/reconciler/*.dist-info src/reconciler/bin
 	rm -rf worker/node_modules
 	@echo "Clean complete"

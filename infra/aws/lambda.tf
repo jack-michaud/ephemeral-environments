@@ -261,6 +261,56 @@ resource "aws_lambda_permission" "cleanup_eventbridge" {
   source_arn    = aws_cloudwatch_event_rule.cleanup_schedule.arn
 }
 
+# Reconciler Worker Lambda (PR status reconciliation)
+resource "aws_lambda_function" "reconciler_worker" {
+  function_name = "${local.name_prefix}-reconciler-worker"
+  role          = aws_iam_role.lambda.arn
+  handler       = "handler.lambda_handler"
+  runtime       = "python3.11"
+  timeout       = 300  # 5 minutes
+  memory_size   = 256
+
+  # Use actual code if available, otherwise placeholder
+  filename         = fileexists("${path.module}/../../dist/reconciler.zip") ? "${path.module}/../../dist/reconciler.zip" : data.archive_file.lambda_placeholder.output_path
+  source_code_hash = fileexists("${path.module}/../../dist/reconciler.zip") ? filebase64sha256("${path.module}/../../dist/reconciler.zip") : data.archive_file.lambda_placeholder.output_base64sha256
+
+  environment {
+    variables = {
+      ENVIRONMENTS_TABLE = aws_dynamodb_table.environments.name
+      GITHUB_SECRET_ARN  = aws_secretsmanager_secret.github_app.arn
+    }
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-reconciler-worker"
+  }
+}
+
+# EventBridge rule for Reconciler Worker (every 30 minutes)
+resource "aws_cloudwatch_event_rule" "reconciler_schedule" {
+  name                = "${local.name_prefix}-reconciler-schedule"
+  description         = "Trigger reconciler worker every 30 minutes"
+  schedule_expression = "rate(30 minutes)"
+
+  tags = {
+    Name = "${local.name_prefix}-reconciler-schedule"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "reconciler_lambda" {
+  rule      = aws_cloudwatch_event_rule.reconciler_schedule.name
+  target_id = "reconciler-worker"
+  arn       = aws_lambda_function.reconciler_worker.arn
+}
+
+resource "aws_lambda_permission" "reconciler_eventbridge" {
+  statement_id  = "AllowEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.reconciler_worker.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.reconciler_schedule.arn
+}
+
 # Placeholder Lambda package (will be replaced by actual code)
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
@@ -298,4 +348,12 @@ output "github_secret_arn" {
 
 output "cloudflare_secret_arn" {
   value = aws_secretsmanager_secret.cloudflare.arn
+}
+
+output "reconciler_worker_arn" {
+  value = aws_lambda_function.reconciler_worker.arn
+}
+
+output "reconciler_worker_name" {
+  value = aws_lambda_function.reconciler_worker.function_name
 }
