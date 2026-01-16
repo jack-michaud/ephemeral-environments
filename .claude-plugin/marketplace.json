@@ -1,0 +1,23 @@
+{
+  "name": "ephemeral-environments",
+  "owner": {
+    "name": "Jack Michaud"
+  },
+  "metadata": {
+    "description": "Plugins for integrating projects with the ephemeral environments PR preview system"
+  },
+  "plugins": [
+    {
+      "name": "ephemeral-environments",
+      "source": "./plugin",
+      "description": "Integrate any project with the ephemeral environments system for automatic PR preview deployments",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jack Michaud"
+      },
+      "repository": "https://github.com/jack-michaud/ephemeral-environments",
+      "keywords": ["ephemeral", "preview", "pr", "deployment", "docker", "github"],
+      "category": "devops"
+    }
+  ]
+}

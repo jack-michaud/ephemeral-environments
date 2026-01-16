@@ -66,7 +66,8 @@ This repo includes a Claude Code plugin that helps integrate any project with th
 ### Install the Plugin
 
 ```bash
-claude plugin add /path/to/ephemeral-environments
+/plugin marketplace add jack-michaud/ephemeral-environments
+/plugin install ephemeral-environments@ephemeral-environments
 ```
 
 ### Use the /integrate Command
