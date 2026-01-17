@@ -1,6 +1,6 @@
 # Ephemeral Environments
 
-This shit should be commoditized at this point, right?
+This sort of thing should be commoditized at this point, right?
 
 Spin up temporary environments for pull requests. Each PR gets its own isolated environment with a public URL.
 
