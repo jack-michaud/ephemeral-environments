@@ -1,6 +1,7 @@
 # Claude Code
 .claude/settings.local.json
 logs/
+.claude/ralph-loop.local.md
 
 # Credentials (NEVER commit these!)
 .env
