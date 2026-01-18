@@ -30,6 +30,18 @@ make lambda-update       # Rebuild and deploy Lambda functions
 make test-e2e            # Run E2E tests with pytest
 ```
 
+## Issue Tracking
+
+This project uses **bd** (beads) for issue tracking.
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --status in_progress  # Claim work
+bd close <id>         # Complete work
+bd sync               # Sync with git
+```
+
 ## Deploy & Test Workflow
 
 Before completing any code changes, run the applicable quality gates:

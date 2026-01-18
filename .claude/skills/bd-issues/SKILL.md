@@ -24,7 +24,7 @@ Every issue in this repository should include a **Testing** section:
 
 ```markdown
 ## Testing
-- Run E2E tests: `make test-e2e`
+- Deploy all changes and run E2E tests (see CLAUDE.md "Deploy & Test Workflow")
 - [Additional verification steps specific to the issue]
 ```
 
