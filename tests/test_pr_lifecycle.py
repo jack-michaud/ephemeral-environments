@@ -79,10 +79,24 @@ class TestPRLifecycle:
         api_response = self._access_api_health()
         assert api_response.status_code == 200, f"Failed to access API health: {api_response.status_code}"
         health_data = api_response.json()
+
+        # Verify direct secret (stored in Secrets Manager manifest)
         assert health_data.get('test_secret_set') is True, "TEST_SECRET was not injected into environment"
         assert health_data.get('test_secret_value') == self.config['test_repo_secret'], \
             f"TEST_SECRET value mismatch: expected {self.config['test_repo_secret']}, got {health_data.get('test_secret_value')}"
-        print(f"   Secrets injection verified: TEST_SECRET is set correctly")
+        print(f"   Direct secret verified: TEST_SECRET is set correctly")
+
+        # Verify Secrets Manager reference resolution
+        assert health_data.get('test_sm_secret_set') is True, "TEST_SM_SECRET was not injected (Secrets Manager ref failed)"
+        assert health_data.get('test_sm_secret_value') == self.config['test_sm_secret'], \
+            f"TEST_SM_SECRET value mismatch: expected {self.config['test_sm_secret']}, got {health_data.get('test_sm_secret_value')}"
+        print(f"   Secrets Manager reference verified: TEST_SM_SECRET resolved correctly")
+
+        # Verify SSM Parameter Store reference resolution
+        assert health_data.get('test_ssm_secret_set') is True, "TEST_SSM_SECRET was not injected (SSM Parameter ref failed)"
+        assert health_data.get('test_ssm_secret_value') == self.config['test_ssm_secret'], \
+            f"TEST_SSM_SECRET value mismatch: expected {self.config['test_ssm_secret']}, got {health_data.get('test_ssm_secret_value')}"
+        print(f"   SSM Parameter Store reference verified: TEST_SSM_SECRET resolved correctly")
 
         # Step 4: Push commit and wait for rebuild
         print("\n4. Pushing commit and waiting for rebuild...")

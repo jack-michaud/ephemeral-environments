@@ -18,10 +18,15 @@ def test_config():
         'github_token': os.environ.get('TEST_GITHUB_TOKEN'),
         'cf_service_token_id': os.environ.get('CF_SERVICE_TOKEN_ID'),
         'cf_service_token_secret': os.environ.get('CF_SERVICE_TOKEN_SECRET'),
+        # Direct secret (stored in Secrets Manager manifest)
         'test_repo_secret': os.environ.get('TEST_REPO_SECRET', 'e2e-test-secret-value-12345'),
+        # Secrets Manager reference (resolved from separate SM secret)
+        'test_sm_secret': os.environ.get('TEST_SM_SECRET', 'e2e-secretsmanager-resolved-value'),
+        # SSM Parameter Store reference (resolved from SSM parameter)
+        'test_ssm_secret': os.environ.get('TEST_SSM_SECRET', 'e2e-ssm-parameter-resolved-value'),
     }
 
-    # Validate required config (test_repo_secret has a default)
+    # Validate required config (secrets have defaults)
     required = ['github_repo', 'github_token', 'cf_service_token_id', 'cf_service_token_secret']
     missing = [k for k in required if not config.get(k)]
     if missing:
