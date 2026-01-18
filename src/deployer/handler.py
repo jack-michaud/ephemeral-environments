@@ -8,8 +8,10 @@ import json
 import os
 import time
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from contextlib import contextmanager
+from typing import Optional
 
 import boto3
 from github import Github, GithubIntegration
@@ -80,59 +82,46 @@ def get_github_client(repo_full_name: str) -> Github:
     return Github(get_github_token(repo_full_name))
 
 
-def get_repo_secrets(repo_full_name: str) -> dict:
+@dataclass
+class RepoConfig:
+    """Configuration for a repository's ephemeral environment."""
+    instance_profile_arn: Optional[str] = None
+    secrets: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_secret(cls, secret_string: str) -> 'RepoConfig':
+        """Parse RepoConfig from Secrets Manager JSON."""
+        data = json.loads(secret_string)
+        return cls(
+            instance_profile_arn=data.get('instance_profile_arn'),
+            secrets=data.get('secrets', {})
+        )
+
+    @classmethod
+    def empty(cls) -> 'RepoConfig':
+        """Return an empty config for repos without configuration."""
+        return cls()
+
+
+def get_repo_config(repo_full_name: str) -> RepoConfig:
     """
-    Fetch application secrets configured for a repository.
+    Fetch repository configuration including instance profile ARN.
 
-    Returns a dict of {env_var_name: value} to be injected into the environment.
-    The manifest can reference secrets from multiple sources:
-    - direct: Value stored directly in the manifest
-    - secretsmanager: Reference to another Secrets Manager secret
-    - ssm: Reference to an SSM parameter
+    The EC2 instance will use the per-repo instance profile to fetch its own
+    secrets via IAM role, so we don't need to fetch secrets here anymore.
 
-    Returns empty dict if no secrets configured for this repo.
+    Returns RepoConfig with instance_profile_arn (secrets are fetched by instance).
     """
     secret_name = f"{REPO_SECRETS_PREFIX}/{repo_full_name}"
 
     try:
         response = secrets_client.get_secret_value(SecretId=secret_name)
-        manifest = json.loads(response['SecretString'])
+        config = RepoConfig.from_secret(response['SecretString'])
+        logger.info(f"Loaded config for {repo_full_name}: instance_profile={bool(config.instance_profile_arn)}")
+        return config
     except secrets_client.exceptions.ResourceNotFoundException:
-        logger.info(f"No secrets configured for {repo_full_name}")
-        return {}
-
-    secrets = {}
-    for env_name, config in manifest.items():
-        secret_type = config.get('type')
-
-        if secret_type == 'direct':
-            secrets[env_name] = config['value']
-
-        elif secret_type == 'secretsmanager':
-            try:
-                ref_response = secrets_client.get_secret_value(SecretId=config['arn'])
-                # If it's a JSON secret, use the whole string; caller can parse if needed
-                secrets[env_name] = ref_response['SecretString']
-            except Exception as e:
-                logger.error(f"Failed to fetch secret {config['arn']} for {env_name}: {e}")
-                # Continue without this secret
-
-        elif secret_type == 'ssm':
-            try:
-                param_response = ssm_client.get_parameter(
-                    Name=config['path'],
-                    WithDecryption=True
-                )
-                secrets[env_name] = param_response['Parameter']['Value']
-            except Exception as e:
-                logger.error(f"Failed to fetch SSM parameter {config['path']} for {env_name}: {e}")
-                # Continue without this secret
-
-        else:
-            logger.warning(f"Unknown secret type '{secret_type}' for {env_name}")
-
-    logger.info(f"Loaded {len(secrets)} secrets for {repo_full_name}")
-    return secrets
+        logger.info(f"No config for {repo_full_name}, using default instance profile")
+        return RepoConfig.empty()
 
 
 def lambda_handler(event, context):
@@ -203,9 +192,9 @@ def handle_deploy(message: dict):
                 context='Ephemeral Environment'
             )
 
-        # Get repo-specific application secrets
-        with timed_step("get_repo_secrets", timings):
-            app_secrets = get_repo_secrets(repo)
+        # Get repo-specific configuration (instance profile for IAM-based secrets)
+        with timed_step("get_repo_config", timings):
+            repo_config = get_repo_config(repo)
 
         # If existing environment, stop old instance first
         if existing and existing.get('ec2_instance_id'):
@@ -215,7 +204,7 @@ def handle_deploy(message: dict):
                 if existing.get('tunnel_id'):
                     cf_manager.delete_tunnel(existing['tunnel_id'])
 
-        # Launch new EC2 instance
+        # Launch new EC2 instance (with per-repo IAM profile if configured)
         with timed_step("launch_instance", timings):
             instance_id = ec2_manager.launch_instance(
                 name=f"ephemeral-{repo.replace('/', '-')}-{pr_number}",
@@ -223,7 +212,8 @@ def handle_deploy(message: dict):
                     'Repository': repo,
                     'PRNumber': str(pr_number),
                     'Branch': branch,
-                }
+                },
+                instance_profile_arn=repo_config.instance_profile_arn
             )
         logger.info(f"Launched instance: {instance_id}")
 
@@ -234,13 +224,13 @@ def handle_deploy(message: dict):
 
         # Run start script via SSM - this starts docker-compose and Quick Tunnel
         # The Quick Tunnel URL is captured from cloudflared output
+        # Note: Secrets are fetched by the instance via IAM role (not embedded in SSM)
         with timed_step("run_ssm_start_environment", timings):
             result = ssm.run_start_environment(
                 instance_id=instance_id,
                 repo_url=clone_url,
                 branch=branch,
-                github_token=github_token,
-                app_secrets=app_secrets
+                github_token=github_token
             )
         logger.info(f"Started environment on {instance_id}")
 

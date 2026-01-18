@@ -96,11 +96,14 @@ resource "aws_iam_role_policy" "lambda_custom" {
         ]
         Resource = aws_sqs_queue.build_queue.arn
       },
-      # IAM PassRole for EC2
+      # IAM PassRole for EC2 (default shared role and per-repo roles)
       {
-        Effect   = "Allow"
-        Action   = "iam:PassRole"
-        Resource = aws_iam_role.environment_instance.arn
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = [
+          aws_iam_role.environment_instance.arn,
+          "arn:aws:iam::${local.account_id}:role/${local.name_prefix}-instance-*"
+        ]
       },
       # Secrets Manager (for GitHub App private key)
       {

@@ -16,29 +16,50 @@ class EC2Manager:
         self.subnet_ids = subnet_ids
         self.security_group_id = security_group_id
 
-    def launch_instance(self, name: str, tags: dict = None) -> str:
-        """Launch a new EC2 instance from the launch template."""
+    def launch_instance(
+        self,
+        name: str,
+        tags: dict = None,
+        instance_profile_arn: str = None
+    ) -> str:
+        """
+        Launch a new EC2 instance from the launch template.
+
+        Args:
+            name: Instance name tag
+            tags: Additional tags to apply
+            instance_profile_arn: Optional per-repo IAM instance profile ARN.
+                                  If provided, overrides the launch template's profile.
+        """
         all_tags = [{'Key': 'Name', 'Value': name}]
         if tags:
             all_tags.extend([{'Key': k, 'Value': v} for k, v in tags.items()])
 
-        response = self.ec2.run_instances(
-            LaunchTemplate={'LaunchTemplateId': self.launch_template_id, 'Version': '$Latest'},
-            MinCount=1,
-            MaxCount=1,
-            NetworkInterfaces=[{
+        # Build run_instances kwargs
+        run_kwargs = {
+            'LaunchTemplate': {'LaunchTemplateId': self.launch_template_id, 'Version': '$Latest'},
+            'MinCount': 1,
+            'MaxCount': 1,
+            'NetworkInterfaces': [{
                 'DeviceIndex': 0,
                 'SubnetId': self.subnet_ids[0],
                 'AssociatePublicIpAddress': True,
                 'Groups': [self.security_group_id]
             }],
-            TagSpecifications=[
+            'TagSpecifications': [
                 {
                     'ResourceType': 'instance',
                     'Tags': all_tags
                 }
             ]
-        )
+        }
+
+        # Override instance profile if a per-repo profile is provided
+        if instance_profile_arn:
+            run_kwargs['IamInstanceProfile'] = {'Arn': instance_profile_arn}
+            logger.info(f"Using per-repo instance profile: {instance_profile_arn}")
+
+        response = self.ec2.run_instances(**run_kwargs)
 
         instance_id = response['Instances'][0]['InstanceId']
         logger.info(f"Launched instance: {instance_id}")

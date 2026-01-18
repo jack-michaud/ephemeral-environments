@@ -105,8 +105,7 @@ class SSMCommands:
         repo_url: str,
         branch: str,
         tunnel_token: str = None,
-        github_token: str = None,
-        app_secrets: dict = None
+        github_token: str = None
     ):
         """
         Run the start-environment script on an instance.
@@ -114,27 +113,17 @@ class SSMCommands:
         This clones the repo, runs docker-compose, and starts cloudflared Quick Tunnel.
         Returns the trycloudflare.com URL in the command output.
 
+        Note: Application secrets are fetched by the instance via IAM role using
+        /usr/local/bin/fetch-secrets.sh. Secrets never appear in SSM command history.
+
         Args:
             instance_id: EC2 instance ID
             repo_url: Git repository URL
             branch: Git branch to checkout
             tunnel_token: (unused) Legacy tunnel token
             github_token: GitHub token for authenticated clone
-            app_secrets: Dict of {env_var_name: value} to inject into docker-compose
         """
-        # Build commands for Quick Tunnel mode
-        # Note: SSM runs each command separately, so we need a single script
         github_token_str = github_token if github_token else ''
-
-        # Build environment variable exports for app secrets
-        # These will be available to docker-compose
-        app_secrets = app_secrets or {}
-        secrets_exports = []
-        for name, value in app_secrets.items():
-            # Escape single quotes in values for safe shell injection
-            escaped_value = value.replace("'", "'\\''")
-            secrets_exports.append(f"export {name}='{escaped_value}'")
-        secrets_export_block = '\n'.join(secrets_exports)
 
         script = f'''#!/bin/bash
 set -e
@@ -151,11 +140,24 @@ export REPO_URL="{repo_url}"
 export BRANCH="{branch}"
 export GITHUB_TOKEN="{github_token_str}"
 
-# Application secrets (injected from Secrets Manager/SSM)
-{secrets_export_block}
-
 echo "Starting environment for $REPO_URL (branch: $BRANCH)"
-echo "Injected {len(app_secrets)} application secrets"
+
+# Fetch application secrets using IAM role (secrets never in SSM history!)
+echo "Fetching application secrets via IAM..."
+if SECRETS_OUTPUT=$(/usr/local/bin/fetch-secrets.sh 2>&1); then
+    # Source the exports (they're on stdout, logs on stderr)
+    EXPORTS=$(echo "$SECRETS_OUTPUT" | grep "^export ")
+    if [ -n "$EXPORTS" ]; then
+        eval "$EXPORTS"
+        SECRET_COUNT=$(echo "$EXPORTS" | wc -l)
+        echo "Loaded $SECRET_COUNT application secrets"
+    else
+        echo "No application secrets configured"
+    fi
+    log_timing "fetch_secrets"
+else
+    echo "Warning: Failed to fetch secrets: $SECRETS_OUTPUT"
+fi
 
 # Start docker immediately (don't wait for systemctl)
 sudo systemctl start docker &
@@ -199,7 +201,7 @@ echo "Started cloudflared"
 
 # Wait for tunnel URL (poll every 0.5s for faster response)
 for i in $(seq 1 60); do
-    TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
+    TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9-]*\\.trycloudflare\\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
     if [ -n "$TUNNEL_URL" ]; then
         log_timing "tunnel_ready"
         echo "TUNNEL_URL=$TUNNEL_URL"

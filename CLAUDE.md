@@ -30,6 +30,35 @@ make lambda-update       # Rebuild and deploy Lambda functions
 make test-e2e            # Run E2E tests with pytest
 ```
 
+## Deploy & Test Workflow
+
+Before completing any code changes, run the applicable quality gates:
+
+```bash
+make tf-apply        # If terraform/infra changes
+make lambda-package  # Build Lambda zips
+make lambda-update   # Deploy Lambda functions
+make test-e2e        # Run E2E tests
+```
+
+## Session Completion
+
+When ending a work session, complete ALL steps. Work is NOT complete until push succeeds.
+
+1. **File issues for remaining work** - Create bd issues for anything needing follow-up
+2. **Run quality gates** (if code changed) - See "Deploy & Test Workflow" above
+3. **Update issue status** - Close finished work with `bd close <id>`
+4. **Commit and push**:
+   ```bash
+   jj describe -m "commit message"    # Describe current revision
+   jj bookmark set main -r @          # Update main to current revision
+   jj new                             # Start new empty revision
+   jj git push -b main                # Push main to remote
+   ```
+5. **Verify** - Confirm push succeeded
+
+**Critical:** Work is NOT complete until `jj git push` succeeds. Never stop before pushing.
+
 ## Architecture Overview
 
 GitHub webhook-driven ephemeral environment system that creates temporary environments for PRs:
