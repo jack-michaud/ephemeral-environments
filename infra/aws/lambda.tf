@@ -151,7 +151,7 @@ resource "aws_secretsmanager_secret_version" "cloudflare" {
   })
 }
 
-# Update Lambda policy to access Cloudflare secret
+# Update Lambda policy to access Cloudflare secret and repo secrets
 resource "aws_iam_role_policy" "lambda_secrets" {
   name = "lambda-secrets-policy"
   role = aws_iam_role.lambda.id
@@ -159,6 +159,7 @@ resource "aws_iam_role_policy" "lambda_secrets" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # Infrastructure secrets (GitHub, Cloudflare)
       {
         Effect = "Allow"
         Action = [
@@ -168,6 +169,23 @@ resource "aws_iam_role_policy" "lambda_secrets" {
           aws_secretsmanager_secret.github_app.arn,
           aws_secretsmanager_secret.cloudflare.arn
         ]
+      },
+      # Repo-specific secrets manifests (created by ephemeral-repo-secrets module)
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:${local.name_prefix}/repos/*"
+      },
+      # SSM parameters that repos may reference
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = "arn:aws:ssm:${local.region}:${local.account_id}:parameter/*"
       }
     ]
   })
@@ -195,6 +213,7 @@ resource "aws_lambda_function" "deploy_worker" {
       SECURITY_GROUP_ID     = aws_security_group.environment.id
       GITHUB_SECRET_ARN     = aws_secretsmanager_secret.github_app.arn
       CLOUDFLARE_SECRET_ARN = aws_secretsmanager_secret.cloudflare.arn
+      REPO_SECRETS_PREFIX   = "${local.name_prefix}/repos"
     }
   }
 

@@ -74,6 +74,16 @@ class TestPRLifecycle:
         print(f"   Response status: {response.status_code}")
         print(f"   Content: test app page confirmed")
 
+        # Step 3b: Verify secrets injection via API health endpoint
+        print("\n3b. Verifying secrets injection...")
+        api_response = self._access_api_health()
+        assert api_response.status_code == 200, f"Failed to access API health: {api_response.status_code}"
+        health_data = api_response.json()
+        assert health_data.get('test_secret_set') is True, "TEST_SECRET was not injected into environment"
+        assert health_data.get('test_secret_value') == self.config['test_repo_secret'], \
+            f"TEST_SECRET value mismatch: expected {self.config['test_repo_secret']}, got {health_data.get('test_secret_value')}"
+        print(f"   Secrets injection verified: TEST_SECRET is set correctly")
+
         # Step 4: Push commit and wait for rebuild
         print("\n4. Pushing commit and waiting for rebuild...")
         self._push_commit()
@@ -173,14 +183,43 @@ class TestPRLifecycle:
             "CF-Access-Client-Secret": self.config['cf_service_token_secret'],
         }
 
-        # Retry loop to handle tunnel connection delay
+        # Retry loop to handle tunnel connection delay and DNS propagation
+        last_error = None
         for attempt in range(max_retries):
-            response = requests.get(self.env_url, headers=headers, timeout=30)
+            try:
+                response = requests.get(self.env_url, headers=headers, timeout=30)
+                if response.status_code == 200:
+                    return response
+                if attempt < max_retries - 1:
+                    print(f"   Retry {attempt + 1}/{max_retries} (status: {response.status_code})")
+                    time.sleep(10)
+            except requests.exceptions.ConnectionError as e:
+                # Handle DNS resolution errors and connection failures
+                last_error = e
+                if attempt < max_retries - 1:
+                    print(f"   Retry {attempt + 1}/{max_retries} (connection error, waiting for DNS)")
+                    time.sleep(10)
+                else:
+                    raise
+
+        return response
+
+    def _access_api_health(self, max_retries: int = 3) -> requests.Response:
+        """Access the API health endpoint to verify secrets injection."""
+        headers = {
+            "CF-Access-Client-Id": self.config['cf_service_token_id'],
+            "CF-Access-Client-Secret": self.config['cf_service_token_secret'],
+        }
+
+        api_url = f"{self.env_url}/api/health"
+
+        for attempt in range(max_retries):
+            response = requests.get(api_url, headers=headers, timeout=30)
             if response.status_code == 200:
                 return response
             if attempt < max_retries - 1:
-                print(f"   Retry {attempt + 1}/{max_retries} (status: {response.status_code})")
-                time.sleep(10)
+                print(f"   API retry {attempt + 1}/{max_retries} (status: {response.status_code})")
+                time.sleep(5)
 
         return response
 

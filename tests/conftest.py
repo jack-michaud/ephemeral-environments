@@ -18,10 +18,12 @@ def test_config():
         'github_token': os.environ.get('TEST_GITHUB_TOKEN'),
         'cf_service_token_id': os.environ.get('CF_SERVICE_TOKEN_ID'),
         'cf_service_token_secret': os.environ.get('CF_SERVICE_TOKEN_SECRET'),
+        'test_repo_secret': os.environ.get('TEST_REPO_SECRET', 'e2e-test-secret-value-12345'),
     }
 
-    # Validate required config
-    missing = [k for k, v in config.items() if not v]
+    # Validate required config (test_repo_secret has a default)
+    required = ['github_repo', 'github_token', 'cf_service_token_id', 'cf_service_token_secret']
+    missing = [k for k in required if not config.get(k)]
     if missing:
         pytest.skip(f"Missing test config: {', '.join(missing)}")
 

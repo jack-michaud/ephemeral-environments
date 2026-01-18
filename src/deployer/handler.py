@@ -43,10 +43,12 @@ SUBNET_IDS = os.environ['SUBNET_IDS'].split(',')
 SECURITY_GROUP_ID = os.environ['SECURITY_GROUP_ID']
 GITHUB_SECRET_ARN = os.environ['GITHUB_SECRET_ARN']
 CLOUDFLARE_SECRET_ARN = os.environ['CLOUDFLARE_SECRET_ARN']
+REPO_SECRETS_PREFIX = os.environ.get('REPO_SECRETS_PREFIX', 'ephemeral-env/repos')
 
 # AWS clients
 dynamodb = boto3.resource('dynamodb')
 secrets_client = boto3.client('secretsmanager')
+ssm_client = boto3.client('ssm')
 environments_table = dynamodb.Table(ENVIRONMENTS_TABLE)
 builds_table = dynamodb.Table(BUILDS_TABLE)
 
@@ -76,6 +78,61 @@ def get_github_token(repo_full_name: str) -> str:
 def get_github_client(repo_full_name: str) -> Github:
     """Get authenticated GitHub client using GitHub App."""
     return Github(get_github_token(repo_full_name))
+
+
+def get_repo_secrets(repo_full_name: str) -> dict:
+    """
+    Fetch application secrets configured for a repository.
+
+    Returns a dict of {env_var_name: value} to be injected into the environment.
+    The manifest can reference secrets from multiple sources:
+    - direct: Value stored directly in the manifest
+    - secretsmanager: Reference to another Secrets Manager secret
+    - ssm: Reference to an SSM parameter
+
+    Returns empty dict if no secrets configured for this repo.
+    """
+    secret_name = f"{REPO_SECRETS_PREFIX}/{repo_full_name}"
+
+    try:
+        response = secrets_client.get_secret_value(SecretId=secret_name)
+        manifest = json.loads(response['SecretString'])
+    except secrets_client.exceptions.ResourceNotFoundException:
+        logger.info(f"No secrets configured for {repo_full_name}")
+        return {}
+
+    secrets = {}
+    for env_name, config in manifest.items():
+        secret_type = config.get('type')
+
+        if secret_type == 'direct':
+            secrets[env_name] = config['value']
+
+        elif secret_type == 'secretsmanager':
+            try:
+                ref_response = secrets_client.get_secret_value(SecretId=config['arn'])
+                # If it's a JSON secret, use the whole string; caller can parse if needed
+                secrets[env_name] = ref_response['SecretString']
+            except Exception as e:
+                logger.error(f"Failed to fetch secret {config['arn']} for {env_name}: {e}")
+                # Continue without this secret
+
+        elif secret_type == 'ssm':
+            try:
+                param_response = ssm_client.get_parameter(
+                    Name=config['path'],
+                    WithDecryption=True
+                )
+                secrets[env_name] = param_response['Parameter']['Value']
+            except Exception as e:
+                logger.error(f"Failed to fetch SSM parameter {config['path']} for {env_name}: {e}")
+                # Continue without this secret
+
+        else:
+            logger.warning(f"Unknown secret type '{secret_type}' for {env_name}")
+
+    logger.info(f"Loaded {len(secrets)} secrets for {repo_full_name}")
+    return secrets
 
 
 def lambda_handler(event, context):
@@ -146,6 +203,10 @@ def handle_deploy(message: dict):
                 context='Ephemeral Environment'
             )
 
+        # Get repo-specific application secrets
+        with timed_step("get_repo_secrets", timings):
+            app_secrets = get_repo_secrets(repo)
+
         # If existing environment, stop old instance first
         if existing and existing.get('ec2_instance_id'):
             with timed_step("terminate_old_instance", timings):
@@ -178,7 +239,8 @@ def handle_deploy(message: dict):
                 instance_id=instance_id,
                 repo_url=clone_url,
                 branch=branch,
-                github_token=github_token
+                github_token=github_token,
+                app_secrets=app_secrets
             )
         logger.info(f"Started environment on {instance_id}")
 
