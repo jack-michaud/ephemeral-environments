@@ -155,6 +155,24 @@ Typical end-to-end deployment times from webhook to environment ready:
 
 *Metrics last validated: 2026-01-18 (from Lambda CloudWatch logs)*
 
+## Cost
+
+**Idle cost: ~$2-3/month** (no active environments)
+
+| Resource | Monthly Cost | Notes |
+|----------|-------------|-------|
+| Secrets Manager (2x) | $0.80 | GitHub App + Cloudflare credentials |
+| CloudWatch Logs | ~$1 | Scheduled Lambda execution logs |
+| Lambda/EventBridge | <$0.50 | Free tier covers cleanup/reconciler runs |
+
+**Active environments:** EC2 instances (t3.small ~$0.02/hour) + data transfer. Environments auto-stop after 4 hours idle and terminate after 24 hours stopped.
+
+**Design decisions that minimize cost:**
+- DynamoDB on-demand (scales to zero)
+- Lambda pay-per-invocation (no provisioned concurrency)
+- Public subnets with public IPs (no NAT Gateway)
+- No VPC endpoints (EC2 reaches SSM over internet)
+
 ## Tech Stack
 
 - **TypeScript**: Cloudflare Worker
