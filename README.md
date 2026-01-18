@@ -4,9 +4,7 @@ This sort of thing should be commoditized at this point, right?
 
 Spin up temporary environments for pull requests. Each PR gets its own isolated environment with a public URL.
 
-[![Demo Video](https://github.com/jack-michaud/ephemeral-environments/releases/download/v0.1.0/demo-thumbnail.jpg)](https://github.com/jack-michaud/ephemeral-environments/releases/download/v0.1.0/demo.mp4)
-
-*Click to watch the 35-second demo*
+https://github.com/user-attachments/assets/d8c23964-01a9-4853-95cf-01c927398327
 
 ## How It Works
 
