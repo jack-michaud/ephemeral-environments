@@ -100,64 +100,6 @@ resource "aws_security_group" "lambda" {
   }
 }
 
-# VPC Endpoints for SSM (so Lambda can reach SSM without NAT)
-resource "aws_vpc_endpoint" "ssm" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${local.region}.ssm"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = aws_subnet.public[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${local.name_prefix}-ssm-endpoint"
-  }
-}
-
-resource "aws_vpc_endpoint" "ssmmessages" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${local.region}.ssmmessages"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = aws_subnet.public[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${local.name_prefix}-ssmmessages-endpoint"
-  }
-}
-
-resource "aws_vpc_endpoint" "ec2messages" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${local.region}.ec2messages"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = aws_subnet.public[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
-
-  tags = {
-    Name = "${local.name_prefix}-ec2messages-endpoint"
-  }
-}
-
-# Security group for VPC endpoints
-resource "aws_security_group" "vpc_endpoints" {
-  name        = "${local.name_prefix}-vpc-endpoints-sg"
-  description = "Security group for VPC endpoints"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-vpc-endpoints-sg"
-  }
-}
-
 # Outputs
 output "vpc_id" {
   value = aws_vpc.main.id
