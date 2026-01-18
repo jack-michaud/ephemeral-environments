@@ -137,20 +137,21 @@ Typical end-to-end deployment times from webhook to environment ready:
 | Phase | Duration | Description |
 |-------|----------|-------------|
 | Webhook → Lambda | ~1s | Cloudflare Worker queues to SQS |
-| Secrets + Auth | ~3s | Fetch Cloudflare/GitHub credentials |
-| EC2 Launch | ~10-15s | Request instance from launch template |
-| Instance Ready | ~30-45s | Wait for instance to pass status checks |
-| SSM Bootstrap | ~180-240s | Clone repo, docker-compose build/up, tunnel start |
-| **Total** | **~4-5 min** | End-to-end deployment |
+| Secrets + Auth | ~2-3s | Fetch Cloudflare/GitHub credentials |
+| EC2 Launch | ~1-2s | Request instance from launch template |
+| Instance Ready | ~6-7s | Wait for instance to pass status checks |
+| SSM Bootstrap | ~50-65s | Clone repo, docker-compose build/up, tunnel start |
+| **Total** | **~60-75s** | End-to-end deployment |
 
-**Rebuild times** (existing environment): ~2-3 min (no EC2 launch wait)
+**Rebuild times** (existing environment): ~60-65s (terminates old instance first)
 
 **Cleanup times**:
-- Auto-stop (4h idle): Immediate stop, ~30s
-- Terminate (24h stopped): Immediate terminate, ~15s
+- Destroy on PR close: <1s
+- Auto-stop (4h idle): Immediate stop
+- Terminate (24h stopped): Immediate terminate
 - Reconciler cleanup: Every 30 min scan
 
-*Metrics last validated: 2026-01-18*
+*Metrics last validated: 2026-01-18 (from Lambda CloudWatch logs)*
 
 ## Tech Stack
 
