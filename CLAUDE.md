@@ -53,6 +53,23 @@ make lambda-update   # Deploy Lambda functions
 make test-e2e        # Run E2E tests
 ```
 
+## Validating Performance Metrics
+
+After major changes (Lambda code, EC2/AMI, SSM scripts), validate and update README metrics:
+
+1. Run E2E tests: `make test-e2e`
+2. Check Lambda CloudWatch logs for timing:
+   ```bash
+   aws logs filter-log-events \
+     --log-group-name "/aws/lambda/ephemeral-env-deploy-worker" \
+     --filter-pattern "[TIMING]" \
+     --start-time $(($(date +%s) - 600))000 \
+     --query 'events[*].message' --output text
+   ```
+3. Look for `[TIMING] === Deploy Summary` entries
+4. Update README Performance section if metrics differ significantly
+5. Update the "Metrics last validated" date
+
 ## Session Completion
 
 When ending a work session, complete ALL steps. Work is NOT complete until push succeeds.
