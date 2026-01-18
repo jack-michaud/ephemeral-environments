@@ -130,6 +130,28 @@ Setup scripts create credentials with minimal permissions:
 
 All settings live in `.env`. See `.env.example` for the full list.
 
+## Performance
+
+Typical end-to-end deployment times from webhook to environment ready:
+
+| Phase | Duration | Description |
+|-------|----------|-------------|
+| Webhook → Lambda | ~1s | Cloudflare Worker queues to SQS |
+| Secrets + Auth | ~3s | Fetch Cloudflare/GitHub credentials |
+| EC2 Launch | ~10-15s | Request instance from launch template |
+| Instance Ready | ~30-45s | Wait for instance to pass status checks |
+| SSM Bootstrap | ~180-240s | Clone repo, docker-compose build/up, tunnel start |
+| **Total** | **~4-5 min** | End-to-end deployment |
+
+**Rebuild times** (existing environment): ~2-3 min (no EC2 launch wait)
+
+**Cleanup times**:
+- Auto-stop (4h idle): Immediate stop, ~30s
+- Terminate (24h stopped): Immediate terminate, ~15s
+- Reconciler cleanup: Every 30 min scan
+
+*Metrics last validated: 2026-01-18*
+
 ## Tech Stack
 
 - **TypeScript**: Cloudflare Worker
